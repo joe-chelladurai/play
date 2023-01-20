@@ -1,0 +1,25 @@
+Package: play
+Type: Package
+Title: Visualize sports data 
+Version: 0.1.0
+Authors@R: 
+    person("Joe", "Chelladurai", , "joe.chelladurai@outlook.com", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-8477-3753"))
+Description: Provides functions to visualise sports data. Converts data into a 
+    format suitable for plotting charts. Helps ease the process of working with
+    messy sports data to a more useable format.
+URL: https://joe-chelladurai.github.io/starry/
+BugReports: https://github.com/joe-chelladurai/starry/issues
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    dplyr,
+    forcats,
+    ggplot2,
+    purrr,
+    stringr,
+    tibble,
+    tidyr,
+    worldfootballR
+RoxygenNote: 7.2.1
