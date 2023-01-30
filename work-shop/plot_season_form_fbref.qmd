@@ -1,0 +1,143 @@
+---
+title: "plot_season_form_fbref"
+format: html
+editor: visual
+---
+
+The goal of this approach should be to decouple worldfootballR from play.
+
+play will take in a dataframe that is in the form of `results` data frame.
+
+![](old.jpeg){width="480"}
+
+![](new.jpeg){width="683"}
+
+## Another Nice Way! - Only FBRef
+
+```{r}
+league_url_2022_2023 <- "https://fbref.com/en/comps/9/2022-2023/2022-2023-Premier-League-Stats"
+
+teams_urls <- worldfootballR::fb_teams_urls(league_url_2022_2023)
+
+results <- map_dfr(teams_urls, fb_team_match_results)
+
+results <- results |> 
+  janitor::clean_names() |> 
+  filter(comp == "Premier League") |> 
+  filter(result != "") |> 
+  group_by(team) |> 
+  mutate(match_num = row_number()) |> relocate(match_num) |> 
+  ungroup() |> # dont forget to ungroup before fct_inorder
+  mutate(team = fct_inorder(team)) # fbref returns urls in order of current standings - this saves a huge step. fct_inorder orders the factor based on order of appearance which is the order of current standings
+
+# standings <- results |> pull(team) |> levels() # no need for this anymore because of scale_y_discrete(limits = rev)
+
+key <- data.frame(key = c("W" = "#18354F", "D" = "grey", "L" = "#BB4430")) |> rownames_to_column("result")
+
+results <- results |> left_join(key, by = "result")
+```
+
+```{r}
+results
+```
+
+```{r}
+# cols <- c("W" = "#18354F", "D" = "grey", "L" = "#BB4430") # no need for this because of key dataframe
+
+new <- results |>
+  ggplot(aes(factor(match_num), team, fill = key)) +
+  geom_tile(
+    color = "white",
+    lwd = .5,
+    linejoin = "bevel"
+ #   linetype = 1,
+ #   height = 0.4,
+ 
+  ) +
+  geom_text(  aes(label = result), color = "white", size = 10) +
+  coord_fixed() +
+ theme_bw() + # theme_minimal prints dark background
+  scale_x_discrete(position = "top") +
+  #scale_fill_manual(values = cols) +
+  scale_fill_identity() + # needed to change fill = result to fill = key
+  scale_y_discrete(limits=rev) +
+#  scale_y_discrete(limits = rev(standings)) + # no need for scale_y_discrete setting with a separate vector with a simple scale_y_discrete(limits = rev)!
+  theme(text = element_text(family = "josefin", size = 52)) + #size 52 prints well
+  theme(plot.title.position = "plot") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()
+  ) +
+  xlab(NULL) +
+  ylab(NULL) + # dont set xlab("") or ylab("") - they occupy space
+  theme(
+    legend.position = "none"
+  ) +
+  labs(title = "Team Season Form - English Premier League (2022/23)")
+
+
+
+# To do
+# switch to scale_fill_identity https://stackoverflow.com/questions/60059191/scale-fill-manual-using-column-of-a-dataframe 
+# add text to geom_tile
+```
+
+```{r}
+results |> 
+  select(team, match_num, result) |> 
+  pivot_wider(names_from = match_num, values_from = result) |> 
+  gt::gt() |> 
+  gtExtras::gt_theme_pff()
+```
+
+```{r}
+plot_season_form_new <- function(data, match_num, team, result, standings) {
+  
+data |>
+  ggplot(aes(factor({{match_num}}), {{team}}, fill = {{result}})) +
+  geom_tile(
+    color = "white",
+    lwd = .5,
+    linetype = 1,
+    height = 0.4
+  ) +
+  coord_fixed() +
+  theme_bw() +
+  scale_x_discrete(position = "top") +
+  scale_fill_manual(values = cols) +
+  scale_y_discrete(limits = rev({{standings}})) +
+#  theme(text = element_text(family = "sourcesans", size = 20)) +
+  theme(text = element_text(family = "josefin", size = 52)) +
+  theme(plot.title.position = "plot") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()
+  ) +
+  xlab(NULL) +
+  ylab(NULL) + # dont set xlab("") or ylab("") - they occupy space
+  theme(
+    legend.position = "bottom",
+    legend.key.height = unit(10, "pt"),
+    legend.key.width = unit(30, "pt"),
+    legend.title = element_text(size = unit(10, "pt")),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(title = "Team Season Form - English Premier League (2022/23)")
+}
+```
+
+```{r}
+old <- plot_season_form_new(results, match_num, team, result, standings)
+```
+
+```{r}
+ggsave("old.jpeg", plot = old)
+```
+
+```{r}
+ggsave("new.jpeg", plot = new)
+```

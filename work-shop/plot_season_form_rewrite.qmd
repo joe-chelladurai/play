@@ -53,13 +53,9 @@ away_list <- epl_results_selected |> distinct(away_team) |> rename(team = away_t
 team_list <- bind_rows(home_list, away_list) |> distinct(team) |> pull(team)
 ```
 
-
-
 ```{r}
 all_results <- map_dfr(team_list, team_results, data = epl_results_selected) |> arrange(match_num)
 ```
-
-
 
 ```{r}
 results_data_to_plot <- all_results |> 
@@ -68,8 +64,6 @@ results_data_to_plot <- all_results |>
   relocate(team) |> 
   select(match_week, team, opponent, team_goals, opponent_goals, result_text, team_abbr, opponent_abbr)
 ```
-
-
 
 ```{r}
 results_data_to_plot <- results_data_to_plot |> 
@@ -88,7 +82,6 @@ standings <- fb_season_team_stats("ENG", "M", 2023, "1st", "league_table") |>
   mutate(rank = as.numeric(Rk)) |> arrange(rank) |> select(team_name_short, rank)
 ```
 
-
 ```{r}
 results_data_to_plot <- results_data_to_plot |> 
   left_join(standings, by = "team_name_short") |> 
@@ -106,7 +99,6 @@ font_add_google("Signika Negative", "signika")
 showtext_auto()
 ```
 
-
 ```{r}
 results_data_to_plot |> 
   select(team, match_week, result_text) |> 
@@ -114,7 +106,6 @@ results_data_to_plot |>
   gt::gt() |> 
   gtExtras::gt_theme_nytimes()
 ```
-
 
 ```{r}
 cols <- c("win" = "#5585b5", "draw" = "grey", "loss" = "#c06c84")
@@ -151,7 +142,6 @@ ggplot(results_data_to_plot, aes(factor(match_week), team_name_short, fill = res
   # match_week could be team match number.
 ```
 
-
 ### Using only fb ref data. However, there is missing data on Week 7, possibly due to the Queen's funeral.
 
 ```{r}
@@ -165,17 +155,21 @@ df <- df |>
          away_team = away)
 ```
 
+```{r}
+df <- df |> filter(notes != "Match Postponed") 
+```
 
 ```{r}
-df
+df <- df |> 
+  rowid_to_column("match_num")
 ```
 
 ```{r}
 
 
-epl_results_selected <- df |> 
-  select(home_team, away_team, home_goals, away_goals, wk) |> 
-  mutate(match_num = as.numeric(wk))
+epl_results_selected <- df #|> 
+ # select(home_team, away_team, home_goals, away_goals, match_num) #|> 
+ # mutate(match_num = as.numeric(wk))
 
 team_results <- function(data, team) {
   home_results <- data |> 
@@ -217,55 +211,47 @@ away_list <- epl_results_selected |> distinct(away_team) |> rename(team = away_t
 team_list <- bind_rows(home_list, away_list) |> distinct(team) |> pull(team)
 ```
 
-
-
 ```{r}
 all_results <- map_dfr(team_list, team_results, data = epl_results_selected) |> arrange(match_num)
 ```
 
-
-
 ```{r}
-results_data_to_plot <- all_results |> 
+all_results |> 
   group_by(match_week, team) |> 
-  arrange(team) |> ungroup() |> 
-  relocate(team) |> 
-  select(match_week, team, opponent, team_goals, opponent_goals, result_text) 
-  
-```
-
-
-
-```{r}
-# results_data_to_plot <- results_data_to_plot |> 
-#  mutate(team_name_short = case_when(team == "Manchester United" ~ "Manchester Utd",
-#                          team == "Newcastle United" ~ "Newcastle Utd",
-#                          team == "Wolverhampton Wanderers" ~ "Wolves",
-#                          team == "Nottingham Forest" ~ "Nott'ham Forest",
-#                          team == "Leicester" ~ "Leicester City",
-#                          team == "Leeds" ~ "Leeds United",
-#                          TRUE ~ team))
+  arrange(team)
 ```
 
 ```{r}
-standings <- fb_season_team_stats("ENG", "M", 2023, "1st", "league_table") |> 
-  mutate(team = Squad) |> 
-  mutate(rank = as.numeric(Rk)) |> arrange(rank) |> select(team, rank)
+worldfootballR::fb_league_urls("ENG", "M", "2022")
 ```
 
 
+## Another Nice Way!
+
 ```{r}
-results_data_to_plot <- results_data_to_plot |> 
-  left_join(standings, by = "team") |> 
-  mutate(team = fct_reorder(team, rank))
+league_url_2022_2023 <- "https://fbref.com/en/comps/9/2022-2023/2022-2023-Premier-League-Stats"
+
+teams_urls <- worldfootballR::fb_teams_urls(league_url_2022_2023)
+
+results <- map_dfr(teams_urls, fb_team_match_results)
+
+results <- results |> 
+  janitor::clean_names() |> 
+  filter(comp == "Premier League") |> 
+  filter(result != "") |> 
+  group_by(team) |> 
+  mutate(match_num = row_number()) |> relocate(match_num) |> 
+  ungroup() |> # dont forget to ungroup before fct_inorder
+  mutate(team = fct_inorder(team))
+
+standings <- results |> pull(team) |> levels()
 ```
 
-
-
 ```{r}
-cols <- c("win" = "#A0BCD6", "draw" = "grey", "loss" = "#ef9a9a")
+cols <- c("W" = "#5585b5", "D" = "grey", "L" = "#9c3848")
 
-ggplot(results_data_to_plot, aes(factor(match_week), team, fill = result_text)) +
+results |> 
+ggplot(aes(factor(match_num), team, fill = result)) +
       geom_tile(color = "white",
                 lwd = .5,
                 linetype = 1,
@@ -273,20 +259,32 @@ ggplot(results_data_to_plot, aes(factor(match_week), team, fill = result_text)) 
       coord_fixed() +
       theme_minimal() +
       scale_x_discrete(position = "top") +
-      xlab("Match") +
-      ylab("") +
-      theme(legend.position="none") +
-      theme(text=element_text(family="mono")) +
-      theme(
+    scale_fill_manual(values = cols) +
+ scale_y_discrete(limits = rev(standings)) +
+   theme(text = element_text(family = "sourcesans", size = 20)) +
+  theme(plot.title.position = "plot") +
+  theme(
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_blank(),
         panel.background = element_blank()) +
-  scale_fill_manual(values = cols) +
- scale_y_discrete(limits = rev(levels(results_data_to_plot$team) ))
+    xlab(NULL) +
+   ylab(NULL) + # dont set xlab("") or ylab("") - they occupy space 
+      theme(legend.position="bottom", 
+            legend.key.height = unit(10, 'pt'),
+            legend.key.width = unit(30, 'pt'),
+            legend.title = element_text(size = unit(10, 'pt')),
+            legend.text = element_text(size = 10)) +
+  labs(title = "Team Season Form - English Premier League (2022/23)")
   
+``` 
+
+
+```{r}
+results |> 
+  select(team, match_num, result) |> 
+  pivot_wider(names_from = match_num, values_from = result) |> 
+  gt::gt() |> 
+  gtExtras::gt_theme_pff()
 ```
 
-TO DO
-
-fuzzy join league standings and plot data
