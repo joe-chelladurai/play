@@ -19,6 +19,7 @@
 #' @export
 
 
+
 plot_season_form <- function(league, season_start_year) {
 
   epl_results <- worldfootballR::understat_league_match_results(league = league, season_start_year = season_start_year)

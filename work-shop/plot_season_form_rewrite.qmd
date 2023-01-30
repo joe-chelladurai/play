@@ -1,0 +1,292 @@
+---
+title: "plot_season_form"
+format: html
+editor: visual
+---
+
+```{r}
+
+epl_results <- worldfootballR::understat_league_match_results(league = "EPL", season_start_year = 2022)
+
+
+epl_results_selected <- epl_results |> 
+  select(home_team, home_abbr, away_team, away_abbr, home_goals, away_goals) |> 
+  rowid_to_column("match_num")
+
+team_results <- function(data, team) {
+  home_results <- data |> 
+  filter(home_team == team) |> 
+  mutate(team = home_team,
+         opponent = away_team,
+         team_abbr = home_abbr,
+         opponent_abbr = away_abbr,
+         team_goals = home_goals,
+         opponent_goals = away_goals)
+  
+  away_results <- data |> 
+  filter(away_team == team) |> 
+  mutate(team = away_team,
+         opponent = home_team,
+         team_abbr = away_abbr,
+         opponent_abbr = home_abbr,
+         team_goals = away_goals,
+         opponent_goals = home_goals
+         )
+  
+  
+  bind_rows(home_results, away_results) |> 
+    arrange(match_num) |> 
+    rowid_to_column("match_week") |> 
+    mutate(result_text = case_when(team_goals > opponent_goals ~ "win",
+                                   team_goals == opponent_goals ~ "draw",
+                                   team_goals < opponent_goals ~ "loss")) 
+}
+
+
+# team_results(epl_results_selected, "Crystal Palace")
+
+```
+
+```{r}
+home_list <- epl_results_selected |> distinct(home_team) |> rename(team = home_team)
+away_list <- epl_results_selected |> distinct(away_team) |> rename(team = away_team)
+team_list <- bind_rows(home_list, away_list) |> distinct(team) |> pull(team)
+```
+
+
+
+```{r}
+all_results <- map_dfr(team_list, team_results, data = epl_results_selected) |> arrange(match_num)
+```
+
+
+
+```{r}
+results_data_to_plot <- all_results |> 
+  group_by(match_week, team) |> 
+  arrange(team) |> ungroup() |> 
+  relocate(team) |> 
+  select(match_week, team, opponent, team_goals, opponent_goals, result_text, team_abbr, opponent_abbr)
+```
+
+
+
+```{r}
+results_data_to_plot <- results_data_to_plot |> 
+  mutate(team_name_short = case_when(team == "Manchester United" ~ "Manchester Utd",
+                          team == "Newcastle United" ~ "Newcastle Utd",
+                          team == "Wolverhampton Wanderers" ~ "Wolves",
+                          team == "Nottingham Forest" ~ "Nott'ham Forest",
+                          team == "Leicester" ~ "Leicester City",
+                          team == "Leeds" ~ "Leeds United",
+                          TRUE ~ team))
+```
+
+```{r}
+standings <- fb_season_team_stats("ENG", "M", 2023, "1st", "league_table") |> 
+  mutate(team_name_short = Squad) |> 
+  mutate(rank = as.numeric(Rk)) |> arrange(rank) |> select(team_name_short, rank)
+```
+
+
+```{r}
+results_data_to_plot <- results_data_to_plot |> 
+  left_join(standings, by = "team_name_short") |> 
+  mutate(team_name_short = fct_reorder(team_name_short, rank))
+```
+
+```{r}
+library(showtext)
+
+font_add_google("Josefin Sans", "josefin")
+font_add_google("Source Sans Pro", "sourcesans")
+font_add_google("Signika Negative", "signika")
+
+
+showtext_auto()
+```
+
+
+```{r}
+results_data_to_plot |> 
+  select(team, match_week, result_text) |> 
+  pivot_wider(names_from = match_week, values_from = result_text) |> 
+  gt::gt() |> 
+  gtExtras::gt_theme_nytimes()
+```
+
+
+```{r}
+cols <- c("win" = "#5585b5", "draw" = "grey", "loss" = "#c06c84")
+
+#cols <- c("win" = "#f8b400", "draw" = "grey", "loss" = "#5585b5")
+
+#cols <- c("win" = "#5585b5", "draw" = "grey", "loss" = "#f8b400")
+
+
+#cols <- c("loss" = "#f8b400", "draw" = "grey", "win" = "#a3de83")
+
+ggplot(results_data_to_plot, aes(factor(match_week), team_name_short, fill = result_text)) +
+      geom_tile(color = "white",
+                lwd = 0.7,
+                linetype = 1,
+                height = 0.7) +
+      coord_fixed() +
+      theme_minimal() +
+      scale_x_discrete(position = "top") +
+  labs(title = "Team Season Form - English Premier League (2022/23)") + 
+      xlab(NULL) +
+   ylab(NULL) + # dont set xlab("") or ylab("") - they occupy space 
+      theme(legend.position="none") +
+      theme(text=element_text(family="mono")) +
+      theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank()) +
+  scale_fill_manual(values = cols) +
+ scale_y_discrete(limits = rev(levels(results_data_to_plot$team_name_short) )) +
+   theme(text = element_text(family = "signika", size = 20)) +
+  theme(plot.title.position = "plot") 
+  # match_week could be team match number.
+```
+
+
+### Using only fb ref data. However, there is missing data on Week 7, possibly due to the Queen's funeral.
+
+```{r}
+df <- fb_match_results(country = "ENG", gender = "M", season_end_year = 2023, tier = "1st")
+```
+
+```{r}
+df <- df |> 
+  janitor::clean_names() |> 
+  rename(home_team = home,
+         away_team = away)
+```
+
+
+```{r}
+df
+```
+
+```{r}
+
+
+epl_results_selected <- df |> 
+  select(home_team, away_team, home_goals, away_goals, wk) |> 
+  mutate(match_num = as.numeric(wk))
+
+team_results <- function(data, team) {
+  home_results <- data |> 
+  filter(home_team == team) |> 
+  mutate(team = home_team,
+         opponent = away_team,
+       #  team_abbr = home_abbr,
+      #   opponent_abbr = away_abbr,
+         team_goals = home_goals,
+         opponent_goals = away_goals)
+  
+  away_results <- data |> 
+  filter(away_team == team) |> 
+  mutate(team = away_team,
+         opponent = home_team,
+       #  team_abbr = away_abbr,
+      #   opponent_abbr = home_abbr,
+         team_goals = away_goals,
+         opponent_goals = home_goals
+         )
+  
+  
+  bind_rows(home_results, away_results) |> 
+    arrange(match_num) |> 
+    rowid_to_column("match_week") |> 
+    mutate(result_text = case_when(team_goals > opponent_goals ~ "win",
+                                   team_goals == opponent_goals ~ "draw",
+                                   team_goals < opponent_goals ~ "loss")) 
+}
+
+
+# team_results(epl_results_selected, "Crystal Palace")
+
+```
+
+```{r}
+home_list <- epl_results_selected |> distinct(home_team) |> rename(team = home_team)
+away_list <- epl_results_selected |> distinct(away_team) |> rename(team = away_team)
+team_list <- bind_rows(home_list, away_list) |> distinct(team) |> pull(team)
+```
+
+
+
+```{r}
+all_results <- map_dfr(team_list, team_results, data = epl_results_selected) |> arrange(match_num)
+```
+
+
+
+```{r}
+results_data_to_plot <- all_results |> 
+  group_by(match_week, team) |> 
+  arrange(team) |> ungroup() |> 
+  relocate(team) |> 
+  select(match_week, team, opponent, team_goals, opponent_goals, result_text) 
+  
+```
+
+
+
+```{r}
+# results_data_to_plot <- results_data_to_plot |> 
+#  mutate(team_name_short = case_when(team == "Manchester United" ~ "Manchester Utd",
+#                          team == "Newcastle United" ~ "Newcastle Utd",
+#                          team == "Wolverhampton Wanderers" ~ "Wolves",
+#                          team == "Nottingham Forest" ~ "Nott'ham Forest",
+#                          team == "Leicester" ~ "Leicester City",
+#                          team == "Leeds" ~ "Leeds United",
+#                          TRUE ~ team))
+```
+
+```{r}
+standings <- fb_season_team_stats("ENG", "M", 2023, "1st", "league_table") |> 
+  mutate(team = Squad) |> 
+  mutate(rank = as.numeric(Rk)) |> arrange(rank) |> select(team, rank)
+```
+
+
+```{r}
+results_data_to_plot <- results_data_to_plot |> 
+  left_join(standings, by = "team") |> 
+  mutate(team = fct_reorder(team, rank))
+```
+
+
+
+```{r}
+cols <- c("win" = "#A0BCD6", "draw" = "grey", "loss" = "#ef9a9a")
+
+ggplot(results_data_to_plot, aes(factor(match_week), team, fill = result_text)) +
+      geom_tile(color = "white",
+                lwd = .5,
+                linetype = 1,
+                height = 0.4) +
+      coord_fixed() +
+      theme_minimal() +
+      scale_x_discrete(position = "top") +
+      xlab("Match") +
+      ylab("") +
+      theme(legend.position="none") +
+      theme(text=element_text(family="mono")) +
+      theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank()) +
+  scale_fill_manual(values = cols) +
+ scale_y_discrete(limits = rev(levels(results_data_to_plot$team) ))
+  
+```
+
+TO DO
+
+fuzzy join league standings and plot data

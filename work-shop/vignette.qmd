@@ -1,0 +1,51 @@
+---
+title: "vignette"
+format: html
+editor: visual
+---
+
+```{r}
+library(play)
+library(ggplot2)
+```
+
+```{r}
+
+library(showtext)
+
+# Add Google fonts
+font_add_google(
+  name = "Josefin Sans",  # Name in fonts.google.com
+  family = "josefin"         # Name in your R session
+)
+font_add_google("Nunito", "nunito")
+
+# Automatically use {showtext} for plots
+showtext_auto()
+
+
+```
+
+```{r}
+plotresult <- plot_season_form("EPL", 2022)
+```
+
+```{r}
+plot <- plotresult +
+   scale_fill_gradient2(low = "#f95959", mid = "#E8E8E8", high = "#455d7a", na.value = "white") +
+    theme(text=element_text(family="josefin")) +
+  ggtitle("English Premier League - Team form (2022)") + xlab("") +
+  theme(plot.title = element_text(size=22)) +
+  theme(axis.title.x = element_text(size = 22))
+
+```
+
+ 
+
+```{r}
+plot
+```
+
+```{r}
+ggsave("plot.jpg")
+```
