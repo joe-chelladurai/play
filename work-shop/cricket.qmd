@@ -1,0 +1,280 @@
+---
+title: "plot_ball_by_ball"
+---
+
+```{r}
+library(tidyverse)
+library(cricketdata)
+```
+
+```{r}
+data <- fetch_cricsheet(type = "bbb",
+                gender = "male",
+                competition = "t20is")
+
+
+```
+
+```{r}
+data |> tail()
+```
+
+```{r}
+text_colour <- c("0" = "white", 
+                 "1" = "white",  
+                 "2" = "white",  
+                 "3" = "white",  
+                 "4" = "white",  
+                 "5" = "white",  
+                 "6" = "white",  
+                 "W" = "white", 
+                 "W1" = "white",
+                 "W2" = "#dc7633") 
+
+fill_colour <- c("0" = "#f4d03f", 
+                 "1" = "#7fcdbb", 
+                 "2" = "#7fcdbb",  
+                 "3" = "#7fcdbb", 
+                 "4" = "#1d91c0", 
+                 "5" = "#225ea8",  
+                 "6" = "#0c2c84", 
+                 "W" = "#dc7633", 
+                 "W1" = "#dc7633",
+                 "W2" = "#dc7633")
+```
+
+```{r}
+data |> 
+  filter(match_id == 1348649)
+```
+
+```{r}
+data |> 
+  filter(match_id == 1348649) |> 
+  group_by(over, batting_team) |> 
+  mutate(extra_runs = case_when(extra_ball == TRUE ~ sum(extras))) |> 
+  mutate(valid_ball = !extra_ball) |> 
+  mutate(valid_ball_number = case_when(valid_ball == TRUE ~ cumsum(as.numeric(valid_ball)), valid_ball == FALSE ~ 0)) |> 
+  mutate(valid_ball_number = replace_na(valid_ball_number, 0)) |> 
+  mutate(valid_ball_number = factor(valid_ball_number)) |> 
+  mutate(valid_ball_number = recode(valid_ball_number,  "0" = "x")) |> 
+  mutate(valid_ball_number = fct_relevel(valid_ball_number, c("x", "6", "5", "4", "3", "2", "1"))) |> 
+  mutate(wicket = case_when(wicket == FALSE ~ "", wicket == TRUE ~ "W", TRUE ~ "")) |> 
+  mutate(total_runs2 = case_when((wicket == "W" & runs_off_bat == 0) ~ "W", is.na(runs_off_bat) ~ "", TRUE ~ paste0(wicket, runs_off_bat))) |> 
+  ggplot() +
+  geom_tile(aes(x = factor(over), y = valid_ball_number, fill = total_runs2)) + 
+  #geom_text(aes(x = over, y = valid_ball_number, label = extra_runs), color = "black", na.rm = TRUE, size = 3) +
+  geom_text(aes(x = over, y = valid_ball_number, label = total_runs2, color = total_runs2),  na.rm = TRUE) +
+  facet_wrap(~batting_team, ncol = 1, labeller = labeller(batting_team = labels)) +
+  scale_color_manual(values = text_colour) + 
+  scale_fill_manual(values = fill_colour, na.value = "white") + 
+  coord_equal() 
+  #mutate(valid_ball = case_when(extra_ball == FALSE ~ 1, extra_ball == TRUE ~ 0)) |> 
+  #mutate(valid_ball_number = case_when(extra_ball == FALSE ~ cumsum(valid_ball),  valid_ball == 0 ~ 0)) 
+  
+```
+
+
+## Working - with functions
+
+
+```{r}
+data <- fetch_cricsheet(type = "bbb",
+                gender = "male",
+                competition = "t20is")
+
+
+```
+
+```{r}
+get_match_data <- function(data, match_id) {
+  id <- match_id
+  data |> 
+    filter(match_id == id)
+}
+
+get_match_wickets <- function(data) {
+  data |> 
+  group_by(match_id, batting_team, innings) |> 
+  filter(wicket == TRUE) |> 
+  count(wicket) |> rename(total_wickets = n) |> select(-wicket) |> 
+    arrange(innings)
+}
+
+get_match_runs <- function(data) {
+  data |> 
+  select(match_id, batting_team, innings, innings1_total, innings2_total) |> 
+  group_by(match_id, batting_team, innings) |> 
+  summarise(innings1_total = min(innings1_total),
+            innings2_total = min(innings2_total), .groups = "drop") |> arrange(innings) |> 
+  mutate(total_runs = case_when(innings == 1 ~ innings1_total,
+                           innings == 2 ~ innings2_total)) |> select(-innings1_total, -innings2_total)
+}
+
+
+get_match_summary <- function(data) {
+  runs <- get_match_runs(data) 
+  wickets <- get_match_wickets(data)
+  
+  runs|> left_join(wickets, by = c("match_id", "batting_team", "innings")) |> 
+     mutate(batting_team = fct_reorder(batting_team, innings))
+}
+
+add_match_summary <- function(data) {
+ get_match_summary(data) |> 
+    left_join(data, by = c("match_id", "batting_team", "innings")) |> 
+    mutate(batting_team = fct_reorder(batting_team, innings))
+}
+
+get_extra_runs <- function(data) {
+  data |> 
+  group_by(batting_team, over) |> 
+  summarise(extra_runs = sum(extras), .groups = 'drop')
+}
+
+
+get_bat_runs <- function(data) {
+  data |> 
+    filter(valid_ball == 1)
+}
+
+
+get_all_runs <- function(bat_runs, extra_runs) {
+    bind_rows(bat_runs, extra_runs)
+}
+
+
+
+format_valid_ball_number <- function(data) {
+  data |> 
+      group_by(batting_team, over)  |> 
+    mutate(valid_ball_number = case_when(valid_ball == 1 ~ cumsum(valid_ball), 
+                                         valid_ball == 0 ~ 0)) 
+}
+
+
+format_wickets <- function(data) {
+  data |> 
+    mutate(wicket = case_when(wicket == FALSE ~ "",
+                            wicket == TRUE ~ "W",
+                            TRUE ~ ""))
+}
+
+
+
+format_runs <- function(data) {
+  
+  data |> 
+    mutate(total_runs2 = case_when((wicket == "W" & runs_off_bat == 0) ~ "W",
+                                is.na(runs_off_bat) ~ "",
+                                TRUE ~ paste0(wicket, runs_off_bat))) 
+  
+}
+
+format_balls <- function(data) {
+  data |> 
+  mutate(valid_ball_number = replace_na(valid_ball_number, 0)) |> 
+  mutate(valid_ball_number = factor(valid_ball_number)) |> 
+  mutate(valid_ball_number = recode(valid_ball_number,  "0" = "x")) |> 
+  mutate(valid_ball_number = fct_relevel(valid_ball_number, c("x", "6", "5", "4", "3", "2", "1")))
+}
+
+create_facet_labels <- function(data) {
+  data |> 
+    get_match_summary() |> 
+  select(batting_team, total_runs, total_wickets) |> 
+  mutate(summary = paste0(batting_team, " ", total_runs, "/", total_wickets)) |> 
+  select(-total_runs, -total_wickets) |> deframe()
+}
+
+get_match_date <- function(data) {
+ date <-  data |> 
+    slice(1) |> 
+    pull(start_date)
+ 
+  date <- format(as.POSIXct(date), format="%B %d %Y")
+
+date
+}
+
+get_match_venue <- function(data) {
+  data |> 
+     slice(1) |> pull(venue)
+  
+}
+
+text_colour <- c("0" = "white", 
+                 "1" = "white",  
+                 "2" = "white",  
+                 "3" = "white",  
+                 "4" = "white",  
+                 "5" = "white",  
+                 "6" = "white",  
+                 "W" = "white", 
+                 "W1" = "white",
+                 "W2" = "#dc7633") 
+
+fill_colour <- c("0" = "#f4d03f", 
+                 "1" = "#7fcdbb", 
+                 "2" = "#7fcdbb",  
+                 "3" = "#7fcdbb", 
+                 "4" = "#1d91c0", 
+                 "5" = "#225ea8",  
+                 "6" = "#0c2c84", 
+                 "W" = "#dc7633", 
+                 "W1" = "#dc7633",
+                 "W2" = "#dc7633")
+
+
+plot_data <- function(data) {
+  ggplot(data) +
+  geom_tile(aes(x = factor(over), y = valid_ball_number, fill = total_runs2)) + 
+  geom_text(aes(x = over, y = valid_ball_number, label = extra_runs), color = "black", na.rm = TRUE, size = 3) +
+  geom_text(aes(x = over, y = valid_ball_number, label = total_runs2, color = total_runs2),  na.rm = TRUE) +
+  facet_wrap(~batting_team, ncol = 1, labeller = labeller(batting_team = labels)) +
+  scale_color_manual(values = text_colour) + 
+  scale_fill_manual(values = fill_colour, na.value = "white") + 
+  coord_equal() +
+  theme(panel.background = element_blank()) +
+  theme(axis.ticks = element_blank()) +
+  theme(legend.position = "none") + 
+  theme(strip.text.x = element_text(hjust = 0, size = 12)) +
+  theme(strip.background = element_blank(), strip.placement = "outside") +
+  xlab("") +
+  ylab("") + 
+  labs(title = paste(teams, "-", date),
+       caption = paste(venue, "|", match_id))
+}
+```
+
+
+```{r}
+match_id <- data |> filter(batting_team == "England") |> 
+  distinct(match_id) |> slice_sample(n = 1) |> pull()
+#match_id <- 412683
+match_data <- get_match_data(data, match_id)
+match_data2 <- match_data |> 
+  add_match_summary() |> 
+  mutate(valid_ball = case_when(extra_ball == FALSE ~ 1, extra_ball == TRUE ~ 0)) |> 
+  relocate(valid_ball, .after = ball) 
+
+
+extra_runs <- get_extra_runs(match_data2)
+bat_runs <- get_bat_runs(match_data2)
+all_runs <- get_all_runs(bat_runs, extra_runs)
+labels <- create_facet_labels(match_data)
+date <- get_match_date(match_data)
+venue <- get_match_venue(match_data)
+teams <- get_match_summary(match_data) |> pull(batting_team) |> as.character()
+teams <- paste(teams, collapse = " vs ")
+
+
+match_data3 <- all_runs |> 
+  format_valid_ball_number() |> 
+  format_wickets() |> 
+  format_runs() |> 
+  format_balls()
+
+plot_data(match_data3) +
+   theme(text=element_text(size=16,  family="Alegreya"))
+```

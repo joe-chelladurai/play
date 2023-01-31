@@ -15,13 +15,20 @@ play will take in a dataframe that is in the form of `results` data frame.
 ## Another Nice Way! - Only FBRef
 
 ```{r}
+library(tidyverse)
+```
+
+```{r}
 league_url_2022_2023 <- "https://fbref.com/en/comps/9/2022-2023/2022-2023-Premier-League-Stats"
 
 teams_urls <- worldfootballR::fb_teams_urls(league_url_2022_2023)
 
-results <- map_dfr(teams_urls, fb_team_match_results)
+all_results <- map_dfr(teams_urls, worldfootballR::fb_team_match_results)
+```
 
-results <- results |> 
+
+```{r}
+results <- all_results |> 
   janitor::clean_names() |> 
   filter(comp == "Premier League") |> 
   filter(result != "") |> 
@@ -32,7 +39,8 @@ results <- results |>
 
 # standings <- results |> pull(team) |> levels() # no need for this anymore because of scale_y_discrete(limits = rev)
 
-key <- data.frame(key = c("W" = "#18354F", "D" = "grey", "L" = "#BB4430")) |> rownames_to_column("result")
+key <- data.frame(key = c("W" = "#18354F", "D" = "grey", "L" = "#BB4430"),
+                  key_text = c("W" = "white", "D" = "black", "L" = "white")) |> rownames_to_column("result")
 
 results <- results |> left_join(key, by = "result")
 ```
@@ -44,7 +52,7 @@ results
 ```{r}
 # cols <- c("W" = "#18354F", "D" = "grey", "L" = "#BB4430") # no need for this because of key dataframe
 
-new <- results |>
+results |>
   ggplot(aes(factor(match_num), team, fill = key)) +
   geom_tile(
     color = "white",
@@ -62,7 +70,7 @@ new <- results |>
   scale_fill_identity() + # needed to change fill = result to fill = key
   scale_y_discrete(limits=rev) +
 #  scale_y_discrete(limits = rev(standings)) + # no need for scale_y_discrete setting with a separate vector with a simple scale_y_discrete(limits = rev)!
-  theme(text = element_text(family = "josefin", size = 52)) + #size 52 prints well
+  #theme(text = element_text(family = "josefin", size = 52)) + #size 52 prints well
   theme(plot.title.position = "plot") +
   theme(
     panel.grid.major = element_blank(),
@@ -84,6 +92,9 @@ new <- results |>
 # add text to geom_tile
 ```
 
+
+
+
 ```{r}
 results |> 
   select(team, match_num, result) |> 
@@ -91,6 +102,53 @@ results |>
   gt::gt() |> 
   gtExtras::gt_theme_pff()
 ```
+
+
+So what would play offer? - just a wrapper for ggplot
+
+```{r}
+plot_season_form <- function(data, match_number, team_name, result_colour, ...) {
+  
+data |>
+  ggplot(aes(factor({{match_number}}), {{team_name}}, fill = {{result_colour}})) +
+  geom_tile(...) +
+  coord_fixed() +
+  theme_minimal() + 
+  scale_x_discrete(position = "top") +
+  scale_fill_identity() +
+  scale_y_discrete(limits=rev) +
+  theme(plot.title.position = "plot") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank()
+  ) +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme(
+    legend.position = "none"
+  )
+}
+
+#Plot season form is a wrapper for geom_tile
+
+plot_season_form(results, match_num, team, key, color = "white", lwd = 1) +
+  geom_text(aes(label = result), colour = "white", size = 3) 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r}
 plot_season_form_new <- function(data, match_num, team, result, standings) {
